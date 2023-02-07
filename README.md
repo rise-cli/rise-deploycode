@@ -1,5 +1,7 @@
 # Rise DeployCode
 
+![GitHub CI status](https://github.com/rise-cli/rise-deploycode/actions/workflows/test.yml/badge.svg)
+
 ## Install
 
 ```
