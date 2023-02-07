@@ -14,11 +14,15 @@ const s3 = new awsReal.S3({
  * @param {string} stage
  * @param {string} region
  */
-export async function deployCodeBucket({ name, stage, region }) {
+export async function deployCodeBucket(
+    { name, stage, region },
+    { deployInfraMock }
+) {
     const bucketTemplate = aws.s3.makeBucket('Main')
     const stackName = name + stage + '-bucket'
 
-    const result = await deployInfra({
+    const deploy = deployInfraMock || deployInfra
+    const result = await deploy({
         name: stackName,
         stage,
         region,
@@ -46,11 +50,12 @@ export async function deployCodeBucket({ name, stage, region }) {
  * @param {string} config.functionsLocation
  * @param {string} config.zipTarget
  */
-export async function zipCode(config) {
+export async function zipCode(config, mockFilesystem) {
+    const fs = mockFilesystem || filesystem
     function getLambdaFunctionPaths(folderName) {
         let lambdas = []
         try {
-            lambdas = filesystem.getDirectories({
+            lambdas = fs.getDirectories({
                 path: folderName,
                 projectRoot: process.cwd()
             })
@@ -68,7 +73,7 @@ export async function zipCode(config) {
 
     const lambdas = getLambdaFunctionPaths(config.functionsLocation)
     for (const lambda of lambdas) {
-        await filesystem.zipFolder({
+        await fs.zipFolder({
             source: lambda.path,
             target: config.zipTarget,
             name: lambda.name,
@@ -86,10 +91,12 @@ export async function zipCode(config) {
  * @param {string} config.zipTarget
  * @param {string} config.hiddenFolder
  */
-export async function uploadCode(config) {
+export async function uploadCode(config, mock) {
+    const fs = mock?.filesystem || filesystem
+    const uploadFile = mock?.uploadFile || aws.s3.uploadFile
     const getAllPaths = () => {
         const lambaPaths = config.functionsLocation
-        const lambdas = filesystem.getDirectories({
+        const lambdas = fs.getDirectories({
             path: lambaPaths,
             projectRoot: process.cwd()
         })
@@ -99,11 +106,11 @@ export async function uploadCode(config) {
     let result = []
     const paths = getAllPaths()
     for (const path of paths) {
-        const file = await filesystem.getFile({
+        const file = await fs.getFile({
             path,
             projectRoot: process.cwd()
         })
-        const res = await aws.s3.uploadFile({
+        const res = await uploadFile({
             file,
             bucket: config.bucketName,
             key: path.split(config.hiddenFolder + '/')[1]
@@ -126,16 +133,16 @@ export async function uploadCode(config) {
  * @param {string} config.zipTarget
  * @param {string} config.hiddenFolder
  */
-export async function updateLambdaCode({
-    appName,
-    stage,
-    region,
-    bucket,
-    zipConfig
-}) {
+export async function updateLambdaCode(
+    { appName, stage, region, bucket, zipConfig },
+    mock
+) {
+    const getDirectories = mock.getDirectories || filesystem.getDirectories
+    const updateCode = mock.updateCode || aws.lambda.updateLambdaCode
+
     const getAllPaths = () => {
         const lambaPaths = zipConfig.functionsLocation
-        const lambdas = filesystem.getDirectories({
+        const lambdas = getDirectories({
             path: lambaPaths,
             projectRoot: process.cwd()
         })
@@ -152,7 +159,7 @@ export async function updateLambdaCode({
     for (const l of getAllPaths()) {
         const lambdaName = getFunctionName(l.name)
 
-        await aws.lambda.updateLambdaCode({
+        await updateCode({
             name: lambdaName,
             filePath: l.path,
             bucket: bucket,
@@ -185,9 +192,7 @@ export async function emptyCodeBucket({ bucketName, keyPrefix }) {
             prefixRegexp = new RegExp('^' + keyPrefix)
         }
         const objectsToDelete = contents
-            .map(function (content) {
-                return { Key: content.Key }
-            })
+            .map((content) => ({ Key: content.Key }))
             .filter((content) => !testPrefix || prefixRegexp.test(content.Key))
 
         const willEmptyBucket = objectsToDelete.length === contents.length
