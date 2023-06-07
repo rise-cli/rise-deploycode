@@ -4,7 +4,7 @@ import { deployInfra } from 'rise-deployinfra'
 import process from 'node:process'
 import awsReal from 'aws-sdk'
 const s3 = new awsReal.S3({
-    region: 'us-east-1'
+    region: 'us-east-1' // todo: make dynamic
 })
 
 /**
@@ -20,7 +20,6 @@ export async function deployCodeBucket(
 ) {
     const bucketTemplate = aws.s3.makeBucket('Main')
     const stackName = name + stage + '-bucket'
-
     const deploy = deployInfraMock || deployInfra
     const result = await deploy({
         name: stackName,
@@ -33,12 +32,6 @@ export async function deployCodeBucket(
     if (result.status === 'error') {
         throw new Error(result.message)
     }
-
-    // filesystem.writeFile({
-    //     path: '/.rise/data.js',
-    //     content: `export const config = { bucketName: "${result.outputs.MainBucket}"}`,
-    //     projectRoot: process.cwd()
-    // })
 
     return result.outputs.MainBucket
 }
@@ -147,18 +140,15 @@ export async function updateLambdaCode(
             projectRoot: process.cwd()
         })
         const path = zipConfig.zipTarget.split(zipConfig.hiddenFolder + '/')[1]
-        return [
-            ...lambdas.map((x) => ({
-                path: `${path}/${x}.zip`,
-                name: x
-            }))
-        ]
+        return lambdas.map((x) => ({
+            path: `${path}/${x}.zip`,
+            name: x
+        }))
     }
 
     const getFunctionName = (name) => `${appName}-${name}-${stage}`
     for (const l of getAllPaths()) {
         const lambdaName = getFunctionName(l.name)
-
         await updateCode({
             name: lambdaName,
             filePath: l.path,
@@ -184,29 +174,31 @@ export async function emptyCodeBucket({ bucketName, keyPrefix }) {
     const contents = resp.Contents
     let testPrefix = false
     let prefixRegexp
+
     if (!contents[0]) {
         return Promise.resolve()
-    } else {
-        if (keyPrefix) {
-            testPrefix = true
-            prefixRegexp = new RegExp('^' + keyPrefix)
-        }
-        const objectsToDelete = contents
-            .map((content) => ({ Key: content.Key }))
-            .filter((content) => !testPrefix || prefixRegexp.test(content.Key))
+    } 
 
-        const willEmptyBucket = objectsToDelete.length === contents.length
-
-        if (objectsToDelete.length === 0) {
-            return Promise.resolve(willEmptyBucket)
-        }
-
-        const params = {
-            Bucket: bucketName,
-            Delete: { Objects: objectsToDelete }
-        }
-
-        await s3.deleteObjects(params).promise()
-        return willEmptyBucket
+    if (keyPrefix) {
+        testPrefix = true
+        prefixRegexp = new RegExp('^' + keyPrefix)
     }
+
+    const objectsToDelete = contents
+        .map((content) => ({ Key: content.Key }))
+        .filter((content) => !testPrefix || prefixRegexp.test(content.Key))
+
+    const willEmptyBucket = objectsToDelete.length === contents.length
+
+    if (objectsToDelete.length === 0) {
+        return Promise.resolve(willEmptyBucket)
+    }
+
+    const params = {
+        Bucket: bucketName,
+        Delete: { Objects: objectsToDelete }
+    }
+
+    await s3.deleteObjects(params).promise()
+    return willEmptyBucket
 }
