@@ -2,10 +2,6 @@ import * as filesystem from 'rise-filesystem-foundation'
 import * as aws from 'rise-aws-foundation'
 import { deployInfra } from 'rise-deployinfra'
 import process from 'node:process'
-import awsReal from 'aws-sdk'
-const s3 = new awsReal.S3({
-    region: 'us-east-1' // todo: make dynamic
-})
 
 /**
  * Deploy code bucket
@@ -165,40 +161,5 @@ export async function updateLambdaCode(
  * @param {string} [keyPrefix]
  */
 export async function emptyCodeBucket({ bucketName, keyPrefix }) {
-    const resp = await s3
-        .listObjectsV2({
-            Bucket: bucketName
-        })
-        .promise()
-
-    const contents = resp.Contents
-    let testPrefix = false
-    let prefixRegexp
-
-    if (!contents[0]) {
-        return Promise.resolve()
-    } 
-
-    if (keyPrefix) {
-        testPrefix = true
-        prefixRegexp = new RegExp('^' + keyPrefix)
-    }
-
-    const objectsToDelete = contents
-        .map((content) => ({ Key: content.Key }))
-        .filter((content) => !testPrefix || prefixRegexp.test(content.Key))
-
-    const willEmptyBucket = objectsToDelete.length === contents.length
-
-    if (objectsToDelete.length === 0) {
-        return Promise.resolve(willEmptyBucket)
-    }
-
-    const params = {
-        Bucket: bucketName,
-        Delete: { Objects: objectsToDelete }
-    }
-
-    await s3.deleteObjects(params).promise()
-    return willEmptyBucket
+    return aws.s3.emptyBucket({ bucketName, keyPrefix })
 }
